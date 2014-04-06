@@ -1,33 +1,35 @@
 #!/usr/bin/env ruby
 
-class BitcoinExchangeCalculator
-  attr_accessor :purchase_amount, :buy_price, :sell_price
+require 'csv'
+require 'json'
+require 'open-uri'
 
-  def initialize(purchase_amount, buy_price, sell_price)
-    @purchase_amount = purchase_amount.to_f
-    @buy_price       = buy_price.to_f
-    @sell_price      = sell_price.to_f
-  end
+require_relative 'bitcoin_exchange_calculator'
 
-  def bought_bitcoins
-    # Buying fees
-    amount = (@purchase_amount - 0.15) / 1.01
+complete_history = JSON.parse(open('https://www.mercadobitcoin.com.br/api/trades/').read)
+sell_prices      = [
+  { date: Time.at(complete_history.first['date']).to_date, price: complete_history.first['price'] },
+  { date: Time.at(complete_history.last['date']).to_date,  price: complete_history.last['price'] }
+]
 
-    amount / @buy_price
-  end
-
-  def selled_amount
-    # Selling fees
-    selled_bitcoins = bought_bitcoins / 1.007
-
-    selled_bitcoins * @sell_price
-  end
-
-  def final_amount
-    # Takeout fees
-    0.9801 * selled_amount - 2.9
-  end
+complete_history = []
+CSV.parse(open('https://coinbase.com/api/v1/prices/historical').read) do |row|
+  complete_history << { date: Date.parse(row[0]), price: row[1].to_f }
 end
+buy_prices = [
+  complete_history.find do |price|
+    price[:date].eql? sell_prices.first[:date]
+  end,
+  complete_history.find do |price|
+    price[:date].eql? sell_prices.last[:date]
+  end
+]
 
-calculator = BitcoinExchangeCalculator.new(*ARGV)
-puts "The final amount is #{calculator.final_amount}"
+sell_prices.each_with_index do |sell_price, index|
+  calculator = BitcoinExchangeCalculator.new(
+    ARGV.first,
+    buy_prices[index][:price],
+    sell_price[:price]
+  )
+  puts "On #{sell_price[:date]}, the final amount would be #{calculator.final_amount}."
+end
